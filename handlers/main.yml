@@ -1,0 +1,7 @@
+---
+- name: 'reload sshd'
+  service:
+    name: sshd
+    state: reloaded
+  listen: managed_certificates_reload_sshd
+  when: "not ansible_facts['is_chroot']"

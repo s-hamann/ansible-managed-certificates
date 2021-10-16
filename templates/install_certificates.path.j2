@@ -1,0 +1,9 @@
+{# vim: filetype=systemd.jinja2 #}
+[Unit]
+Description=Trigger install_certificates when new data appears
+
+[Path]
+DirectoryNotEmpty={{ managed_certificates_deployment_upload_directory }}
+
+[Install]
+WantedBy=multi-user.target

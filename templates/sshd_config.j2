@@ -1,0 +1,8 @@
+{# vim: filetype=sshdconfig.jinja2 #}
+{{ ansible_managed | comment }}
+Match User "{{ managed_certificates_deployment_user }}"
+  ForceCommand internal-sftp
+  DisableForwarding yes
+  ChrootDirectory %h
+  PermitTTY no
+  PermitTunnel no

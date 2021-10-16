@@ -1,0 +1,281 @@
+#!/bin/sh
+{{ ansible_managed | comment }}
+# This script moves X.509 certificates, certificate chains and private keys
+# from a source directory to their destination directory and sets correct
+# permissions. It handled both server and client certificates and is capable of
+# handling multiple certificates in the same invocation.
+# It performs basic validation and skips certificates that look
+# broken/mismatched.
+# All files MUST be in PEM format. Certificates must have the file name
+# extension .pem, private keys must have the extension .key. Apart from the
+# extension, private key file must have the same name as the matching
+# certificate file. Other than that, file names can be arbitrary and do not
+# need to be consistent between invocations of this script.
+# Files in the target directory are named consistently, based on the
+# certificate's CN filed. File names are:
+# * ${cn}.pem
+# * ${cn}.key
+# * ${cn}_chain.pem
+# * ${cn}_fullchain.pem
+# The only file that needs to be present in the source directory is the host's
+# certificate. If the private key and issuer certificate chain are not
+# supplied, the existing files are kept. The new certificate must match the
+# existing files in this case.
+
+source_dir={{ managed_certificates_deployment_upload_directory | quote }}
+server_services='{{ [managed_certificates_server_certificate_consumers | default([])] | flatten | join(' ') }}'
+client_services='{{ [managed_certificates_client_certificate_consumers | default([])] | flatten | join(' ') }}'
+wipe_source_dir=true
+
+server_cert_files=
+client_cert_files=
+
+new_server_certificates=false
+new_client_certificates=false
+
+log() {
+    prio="$1"
+    case "${prio}" in
+        emerg|panic) print_prio='Emergency'; num_prio=0;;
+        alert) print_prio='Alert'; num_prio=1;;
+        crit) print_prio='Critical'; num_prio=2;;
+        err|error) print_prio='Error'; num_prio=3;;
+        warning|warn) print_prio='Warning'; num_prio=4;;
+        notice) print_prio='Notice'; num_prio=5;;
+        info) print_prio='Info'; num_prio=6;;
+        debug) print_prio='Debug'; num_prio=7;;
+    esac
+    shift
+    if [ -t 0 ] || [ -t 1 ] || [ -t 2 ]; then
+        # At least one of stdin, stdout and stderr is connected to a TTY.
+        # Just print the message to stderr.
+        printf '%s: %s\n' "${print_prio}" "$@" >&2
+    else
+        # Nothing is connected to a TTY.
+{% if ansible_facts['service_mgr'] == 'systemd' %}
+        # Log the message to the systemd journal and be quiet.
+        logger --journald <<EOM
+MESSAGE=$*
+PRIORITY=${num_prio}
+SYSLOG_FACILITY={{ managed_certificates_syslog_facilities[managed_certificates_deployment_log_facility] }}
+SYSLOG_IDENTIFIER=$(basename -- "$0")
+SYSLOG_PID=$$
+EOM
+{% else %}
+        # Log the message to syslog and be quiet.
+        logger -t "$(basename -- "$0")" -p "{{ managed_certificates_deployment_log_facility }}.${prio}" -- "$@"
+{% endif %}
+    fi
+}
+
+install_certificate() {
+    ( # The whole function runs in a subshell to keep the environment clean.
+    cert_type="$1"
+    cert_file="$2"
+
+    log debug "Installing ${cert_type} certificate ${cert_file#${tmp_dir%/}/}."
+
+    case "${cert_type}" in
+        server)
+            target_dir={{ managed_certificates_server_certificate_directory | quote }}
+            group={{ managed_certificates_server_group | quote }}
+            ;;
+        client)
+            target_dir={{ managed_certificates_client_certificate_directory | quote }}
+            group={{ managed_certificates_client_group | quote }}
+            ;;
+        *)
+            log err "Unsupported certificate type ${cert_type}. Skipping ${cert_file#${tmp_dir%/}/}."
+            exit 1
+            ;;
+    esac
+
+    cn="$(LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -subject | sed -Ee 's/.*CN = ([a-zA-Z0-9.-]*),?/\1/')"
+    issuer="$(LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -issuer | sed -Ee 's/issuer=(.*)/\1/')"
+    target_file="${target_dir}/${cn}.pem"
+    key_file="${cert_file%.pem}.key"
+    target_key_file="${target_dir}/${cn}.key"
+    target_chain_file="${target_dir}/${cn}_chain.pem"
+    target_bundled_file="${target_dir}/${cn}_fullchain.pem"
+
+    if [ -z "${cn}" ] || [ "${cn#*=}" != "${cn}" ]; then
+        log err "Could not parse CN field. Skipping ${cert_file#${tmp_dir%/}/}."
+        exit 1
+    fi
+
+    log debug "CN=${cn}, Issuer: ${issuer}"
+
+    # Check if the certificate has expired.
+    if ! LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -checkend 0 >/dev/null; then
+        log err "Certificate has expired. Skipping ${cert_file#${tmp_dir%/}/}."
+        exit 1
+    fi
+
+    # Check if a private key was supplied.
+    if [ ! -e "${key_file}" ]; then
+        key_file="${target_key_file}"
+    fi
+    # Check if the private key matches the certificate.
+    key_hash="$(openssl pkey -in "${key_file}" -pubout -outform pem | openssl sha512)"
+    cert_hash="$(openssl x509 -in "${cert_file}" -noout -pubkey -outform pem | openssl sha512)"
+    if [ "${key_hash}" != "${cert_hash}" ]; then
+        log err "Certificate does not match private key. Skipping ${cert_file#${tmp_dir%/}/}."
+        exit 1
+    fi
+
+    # Check if the issuer certificate chain was supplied.
+    for file in "${tmp_dir}"/*.pem; do
+        if [ "$(openssl x509 -in "${file}" -noout -subject)" = "subject=${issuer}" ]; then
+            log debug "Found issuer certificate in ${file#${tmp_dir%/}/}."
+            chain_file="${file}"
+            break
+        fi
+    done
+    if [ -z "${chain_file}" ] && [ -e "${target_chain_file}" ]; then
+        if [ "$(openssl x509 -in "${target_chain_file}" -noout -subject)" != "subject=${issuer}" ]; then
+            log err "Certificate does not match existing issuer chain and no new file was supplied. Skipping ${cert_file#${tmp_dir%/}/}."
+            exit 1
+        fi
+    fi
+
+    # Copy the files to the target directory.
+    log debug "Installing certificate ${cert_file#${tmp_dir%/}/} to ${target_file}."
+    msg="Installed new ${cert_type} certificate"
+    cp -a "${cert_file}" "${target_file}"
+    chown root:"${group}" "${target_file}"
+    chmod 0640 "${target_file}"
+    if [ "${key_file}" != "${target_key_file}" ]; then
+        log debug "Installing key ${key_file#${tmp_dir%/}/} to ${target_key_file}."
+        msg="${msg} and private key"
+        cp -a "${key_file}" "${target_key_file}"
+        chown root:"${group}" "${target_key_file}"
+        chmod 0640 "${target_key_file}"
+    fi
+    if [ -n "${chain_file}" ]; then
+        log debug "Installing issuer chain ${chain_file#${tmp_dir%/}/} to ${target_chain_file}."
+        msg="${msg} and issuer certificate chain"
+        cp -a "${chain_file}" "${target_chain_file}"
+        chown root:"${group}" "${target_chain_file}"
+        chmod 0640 "${target_chain_file}"
+    fi
+    if [ -e "${target_chain_file}" ]; then
+        cat "${target_file}" "${target_chain_file}" > "${target_bundled_file}"
+        chown root:"${group}" "${target_bundled_file}"
+        chmod 0640 "${target_bundled_file}"
+    else
+        cp -a "${target_file}" "${target_bundled_file}"
+    fi
+    msg="${msg} for ${cn} as ${target_file}."
+    log notice "${msg}"
+    )
+}
+
+# Lock to prevent multiple parallel executions.
+lock_fd="$(($(basename -- "$(find /proc/self/fd -type l | sort -n | tail -n1)") + 1))"
+eval exec "${lock_fd}>'/run/lock/$(basename -- "$0").lock'"
+flock -n "${lock_fd}" || { log notice "$(basename -- "$0") is already running. Exiting."; exit 0; }
+# Wait a moment, in case files appear with a short delay.
+sleep {{ managed_certificates_deployment_delay }}
+
+# Copy everything from $source_dir to a temporary directory to prevent other
+# system user from fiddling with the files during processing.
+tmp_dir="$(mktemp -d -p "${TMPDIR:-/tmp}" install_certificates.XXXXXX)"
+trap 'rm -rf "${tmp_dir}"' EXIT INT TERM QUIT HUP
+cp -a -- "${source_dir}"/* "${tmp_dir}"
+
+# Remove everything that is not a regular file.
+for file in "${tmp_dir}"/*; do
+    if [ ! -f "${file}" ] || [ -L "${file}" ]; then
+        rm -rf -- "${file}"
+        # We should not even get here. Unexpected file types may hint at a
+        # security issue. Hence the high log level.
+        log warning "${file#${tmp_dir%/}/} is not a regular file. Deleted."
+    fi
+done
+
+# Find the host certificate file(s).
+for file in "${tmp_dir}"/*.pem; do
+    # If there are no *.pem files, we'll get the unexpanded pattern. Skip that.
+    if [ ! -e "${file}" ]; then
+        continue
+    fi
+    log debug "Checking ${file#${tmp_dir%/}/}."
+    # Count certificates in $file.
+    if [ "$(grep -c -F 'BEGIN CERTIFICATE' "${file}")" != 1 ]; then
+        log debug "${file#${tmp_dir%/}/} does not contain exactly one certificate. Skipping."
+        continue
+    fi
+    # Parse certificate usage extensions.
+    purpose="$(LC_ALL=POSIX openssl x509 -in "${file}" -noout -purpose)"
+    # Check if $file contains a CA certificate.
+    if echo "${purpose}" | grep -v 'Any Purpose' | grep -q ' CA : Yes'; then
+        log debug "${file#${tmp_dir%/}/} is a CA certificate. Skipping."
+        continue
+    fi
+    # Check if $file contains a server certificate.
+    if echo "${purpose}" | grep -q 'SSL server : Yes'; then
+        log debug "${file#${tmp_dir%/}/} is a server certificate."
+        server_cert_files="${file} "
+    fi
+    # Check if $file contains a client certificate.
+    if echo "${purpose}" | grep -q 'SSL client : Yes'; then
+        log debug "${file#${tmp_dir%/}/} is a client certificate."
+        client_cert_files="${file} "
+    fi
+done
+
+# Handle server certificates.
+for file in ${server_cert_files}; do
+    install_certificate server "${file}" && new_server_certificates=true
+done
+
+# Handle client certificates.
+for file in ${client_cert_files}; do
+    install_certificate client "${file}" && new_client_certificates=true
+done
+
+if "${wipe_source_dir}"; then
+    # Wipe upload directory.
+    log debug "Removing all files from ${source_dir}."
+    rm -rf -- "${source_dir:?}"/* "${source_dir:?}"/.* 2>/dev/null
+fi
+
+if "${new_server_certificates}"; then
+    # Restart services so they load the new server certificates.
+    for service in ${server_services}; do
+        log debug "Reloading ${service} to load new server certificate."
+{% if ansible_facts['service_mgr'] == 'systemd' %}
+        systemctl reload "${service}"
+{% elif ansible_facts['service_mgr'] == 'openrc' %}
+        if rc-service --dry-run "${service}" reload; then
+            rc-service "${service}" reload
+        else
+            rc-service "${service}" restart
+        fi
+{% else %}
+        "/etc/init.d/${service}" reload
+{% endif %}
+    done
+else
+    log notice "No new server certificates were installed."
+fi
+
+if "${new_client_certificates}"; then
+    # Restart services so they load the new client certificates.
+    for service in ${client_services}; do
+        log debug "Reloading ${service} to load new client certificate."
+{% if ansible_facts['service_mgr'] == 'systemd' %}
+        systemctl reload "${service}"
+{% elif ansible_facts['service_mgr'] == 'openrc' %}
+        if rc-service --dry-run "${service}" reload; then
+            rc-service "${service}" reload
+        else
+            rc-service "${service}" restart
+        fi
+{% else %}
+        "/etc/init.d/${service}" reload
+{% endif %}
+    done
+else
+    log notice "No new client certificates were installed."
+fi

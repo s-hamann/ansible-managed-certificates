@@ -1,0 +1,42 @@
+{# vim: filetype=systemd.jinja2 #}
+[Unit]
+Description=Move externally generated certificates and keys to their final destination
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/install_certificates.sh
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_CHOWN CAP_FOWNER
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/lock
+ReadWritePaths={{ managed_certificates_deployment_upload_directory | quote }}
+ReadWritePaths=-{{ managed_certificates_server_certificate_directory | quote }}
+ReadWritePaths=-{{ managed_certificates_client_certificate_directory | quote }}
+NoExecPaths={{ managed_certificates_deployment_upload_directory | quote }}
+{% if managed_certificates_inaccessible_paths | count %}
+{% for path in [managed_certificates_inaccessible_paths] | flatten | unique %}
+InaccessiblePaths=-{{ path | quote }}
+{% endfor %}
+{% endif %}
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallFilter=@system-service @basic-io @chown @file-system
+SystemCallFilter=~@clock @cpu-emulation @keyring @memlock @module @mount @raw-io @reboot @resources @swap
+SystemCallArchitectures=native
+RemoveIPC=true
