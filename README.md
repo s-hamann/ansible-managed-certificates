@@ -4,7 +4,7 @@ Managed Certificates
 This role prepares the target system for external management of X.509 certificates.
 Certificates, keys and certificate chains can be deployed to the target system by simply uploading them via SFTP as an unprivileged user.
 The system itself handles basic validation of the uploaded files, moving them to the correct location and restarting services, so they load the new files.
-Some configuration is required for this to work correctly (see [Role Variable](#Role Variables) below).
+Some configuration is required for this to work correctly (see [Role Variables](#role-variables) below).
 
 The external certificate manager needs to fulfill the following requirements:
 * All files must be uploaded directly into the upload directory. Subdirectories are not supported.
