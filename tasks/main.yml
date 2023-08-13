@@ -1,8 +1,8 @@
 ---
-- name: 'gather os specific variables'
-  include_vars: "{{ vars_file }}"
+- name: 'Gather os specific variables'
+  ansible.builtin.include_vars: "{{ vars_file }}"
   loop:
-    - 'default.yml'
+    - default.yml
     - "{{ ansible_facts['os_family'] | lower }}.yml"
     - "{{ ansible_facts['distribution'] | lower }}.yml"
     - "{{ ansible_facts['distribution'] | lower }}-{{ ansible_facts['distribution_major_version'] }}.yml"
@@ -11,22 +11,23 @@
     loop_var: vars_file
   when: "(vars_file is abs and vars_file is file) or (vars_file is not abs and (role_path ~ '/vars/' ~ vars_file) is file)"
 
-- name: 'ensure configuration consistency'
-  set_fact:
-    managed_certificates_deployment_upload_directory: "{{ managed_certificates_deployment_upload_directory | regex_replace('\\/$', '') }}" # remove trailing / (if any), since dirname would not work correctly otherwise
+- name: 'Ensure configuration consistency'
+  ansible.builtin.set_fact:
+    # remove trailing / (if any), since dirname would not work correctly otherwise
+    managed_certificates_deployment_upload_directory: "{{ managed_certificates_deployment_upload_directory | regex_replace('\\/$', '') }}"
 
-- name: 'adjust package requirements'
-  set_fact:
+- name: 'Adjust package requirements'
+  ansible.builtin.set_fact:
     managed_certificates_packages: "{{ managed_certificates_packages + ['incron'] }}"
   when: "ansible_facts['service_mgr'] != 'systemd'"
 
-- name: 'install required packages'
-  package:
+- name: 'Install required packages'
+  ansible.builtin.package:
     name: "{{ managed_certificates_packages }}"
     state: present
 
-- name: 'create required user groups'
-  group:
+- name: 'Create required user groups'
+  ansible.builtin.group:
     name: "{{ item }}"
     system: true
     state: present
@@ -35,8 +36,8 @@
     - "{{ managed_certificates_server_group }}"
     - "{{ managed_certificates_client_group }}"
 
-- name: 'create certificate deployment user'
-  user:
+- name: 'Create certificate deployment user'
+  ansible.builtin.user:
     name: "{{ managed_certificates_deployment_user }}"
     password: '*'
     group: "{{ managed_certificates_deployment_user }}"
@@ -48,8 +49,8 @@
     system: true
     state: present
 
-- name: 'create required directories'
-  file:
+- name: 'Create required directories'
+  ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
     owner: "{{ item.owner | default('root') }}"
@@ -73,86 +74,84 @@
   loop_control:
     label: "{{ item.path }}"
 
-- name: 'install certificate deployment script'
-  template:
+- name: 'Install certificate deployment script'
+  ansible.builtin.template:
     dest: '/usr/local/sbin/install_certificates.sh'
     src: install_certificates.sh.j2
     owner: root
     group: root
-    mode: 0755
+    mode: '0755'
 
-- name: 'set up deployment trigger (systemd)'
-  block:
-
-  - name: 'install certificate deployment trigger (systemd)'
-    template:
-      dest: "/etc/systemd/system/{{ item }}"
-      src: "{{ item }}.j2"
-      owner: root
-      group: root
-      mode: 0644
-    loop:
-      - install_certificates.service
-      - install_certificates.path
-    register: _systemd_trigger
-
-  - name: 'reload service files'
-    systemd:
-      daemon_reload: true
-    when: "_systemd_trigger is changed"
-
-  - name: 'enable and start certificate deployment trigger (systemd)'
-    service:
-      name: install_certificates.path
-      enabled: true
-      state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'started') }}"
-
+- name: 'Set up deployment trigger (systemd)'
   when: "ansible_facts['service_mgr'] == 'systemd'"
-
-- name: 'set up deployment trigger (incron)'
   block:
 
-  - name: 'create /etc/incron.d/'
-    file:
-      path: '/etc/incron.d/'
-      state: directory
-      owner: root
-      group: root
-      mode: 0755
+    - name: 'Install certificate deployment trigger (systemd)'
+      ansible.builtin.template:
+        dest: "/etc/systemd/system/{{ item }}"
+        src: "{{ item }}.j2"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - install_certificates.service
+        - install_certificates.path
+      register: _systemd_trigger
 
-  - name: 'install certificate deployment trigger (incron)'
-    copy:
-      dest: '/etc/incron.d/install_certficates'
-      content: "{{ managed_certificates_deployment_upload_directory }} IN_CREATE /usr/local/sbin/install_certificates.sh\n"
-      owner: root
-      group: root
-      mode: 0644
+    - name: 'Reload service files'
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: "_systemd_trigger is changed"
 
-  - name: 'enable and start incron'
-    service:
-      name: "{{ managed_certificates_incron_service_name }}"
-      enabled: true
-      state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'started') }}"
+    - name: 'Enable and start certificate deployment trigger (systemd)'
+      ansible.builtin.service:
+        name: install_certificates.path
+        enabled: true
+        state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'started') }}"
 
+- name: 'Set up deployment trigger (incron)'
   when: "ansible_facts['service_mgr'] != 'systemd'"
+  block:
 
-- name: 'configure sshd'
-  template:
+    - name: 'Create /etc/incron.d/'
+      ansible.builtin.file:
+        path: '/etc/incron.d/'
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: 'Install certificate deployment trigger (incron)'
+      ansible.builtin.copy:
+        dest: '/etc/incron.d/install_certficates'
+        content: "{{ managed_certificates_deployment_upload_directory }} IN_CREATE /usr/local/sbin/install_certificates.sh\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: 'Enable and start incron'
+      ansible.builtin.service:
+        name: "{{ managed_certificates_incron_service_name }}"
+        enabled: true
+        state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'started') }}"
+
+- name: 'Configure sshd'
+  ansible.builtin.template:
     dest: '/etc/ssh/sshd_config.d/install_certificates.conf'
     src: 'sshd_config.j2'
     owner: root
     group: root
-    mode: 0644
-  notify: managed_certificates_reload_sshd
+    mode: '0644'
+  notify: _managed_certificates_reload_sshd
 
-- name: 'add public SSH key(s) for deployment user'
+- name: 'Add public SSH key(s) for deployment user'
   # Note: Module authorized_key unconditionally enforces permissions and ownership on the file that are not desired here.
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: "{{ managed_certificates_deployment_upload_directory | dirname ~ '/.ssh/authorized_keys' }}"
     line: "restrict {{ item if item is search('^ssh-') else lookup('file', item) }}"
     owner: root
     group: root
-    mode: 0644
+    mode: '0644'
     create: true
     state: present
   loop: "{{ [managed_certificates_deployment_user_pubkey | default([])] | flatten }}"
