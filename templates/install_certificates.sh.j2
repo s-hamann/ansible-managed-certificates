@@ -178,7 +178,7 @@ flock -n "${lock_fd}" || { log notice "$(basename -- "$0") is already running. E
 sleep {{ managed_certificates_deployment_delay }}
 
 # Copy everything from $source_dir to a temporary directory to prevent other
-# system user from fiddling with the files during processing.
+# system users from fiddling with the files during processing.
 tmp_dir="$(mktemp -d -p "${TMPDIR:-/tmp}" install_certificates.XXXXXX)"
 trap 'rm -rf "${tmp_dir}"' EXIT INT TERM QUIT HUP
 cp -a -- "${source_dir}"/* "${tmp_dir}"
