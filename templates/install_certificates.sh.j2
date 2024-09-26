@@ -90,7 +90,7 @@ install_certificate() {
             ;;
     esac
 
-    cn="$(LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -subject | sed -Ee 's/.*CN = ([a-zA-Z0-9.-]*),?/\1/')"
+    cn="$(LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -subject | sed -Ee 's/.*CN\s*=\s*([a-zA-Z0-9.-]*),?/\1/')"
     issuer="$(LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -issuer | sed -Ee 's/issuer=(.*)/\1/')"
     target_file="${target_dir}/${cn}.pem"
     key_file="${cert_file%.pem}.key"
