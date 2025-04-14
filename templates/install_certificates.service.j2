@@ -10,13 +10,13 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/run/lock
-ReadWritePaths={{ managed_certificates_deployment_upload_directory | quote }}
-ReadWritePaths=-{{ managed_certificates_server_certificate_directory | quote }}
-ReadWritePaths=-{{ managed_certificates_client_certificate_directory | quote }}
-NoExecPaths={{ managed_certificates_deployment_upload_directory | quote }}
+ReadWritePaths={{ managed_certificates_deployment_upload_directory | ansible.builtin.quote }}
+ReadWritePaths=-{{ managed_certificates_server_certificate_directory | ansible.builtin.quote }}
+ReadWritePaths=-{{ managed_certificates_client_certificate_directory | ansible.builtin.quote }}
+NoExecPaths={{ managed_certificates_deployment_upload_directory | ansible.builtin.quote }}
 {% if managed_certificates_inaccessible_paths | count %}
-{% for path in [managed_certificates_inaccessible_paths] | flatten | unique %}
-InaccessiblePaths=-{{ path | quote }}
+{% for path in [managed_certificates_inaccessible_paths] | ansible.builtin.flatten | ansible.builtin.unique %}
+InaccessiblePaths=-{{ path | ansible.builtin.quote }}
 {% endfor %}
 {% endif %}
 PrivateTmp=true

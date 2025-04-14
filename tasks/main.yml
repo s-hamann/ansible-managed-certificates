@@ -9,12 +9,12 @@
     - "{{ ansible_facts['distribution'] | lower }}-{{ ansible_facts['distribution_version'] }}.yml"
   loop_control:
     loop_var: vars_file
-  when: "(vars_file is abs and vars_file is file) or (vars_file is not abs and (role_path ~ '/vars/' ~ vars_file) is file)"
+  when: "(vars_file is ansible.builtin.abs and vars_file is ansible.builtin.file) or (vars_file is not ansible.builtin.abs and (role_path ~ '/vars/' ~ vars_file) is ansible.builtin.file)"
 
 - name: 'Ensure configuration consistency'
   ansible.builtin.set_fact:
     # remove trailing / (if any), since dirname would not work correctly otherwise
-    managed_certificates_deployment_upload_directory: "{{ managed_certificates_deployment_upload_directory | regex_replace('\\/$', '') }}"
+    managed_certificates_deployment_upload_directory: "{{ managed_certificates_deployment_upload_directory | ansible.builtin.regex_replace('\\/$', '') }}"
 
 - name: 'Adjust package requirements'
   ansible.builtin.set_fact:
@@ -42,7 +42,7 @@
     password: '*'
     group: "{{ managed_certificates_deployment_user }}"
     groups: "{{ managed_certificates_deployment_user_extra_groups }}"
-    home: "{{ managed_certificates_deployment_upload_directory | dirname }}"
+    home: "{{ managed_certificates_deployment_upload_directory | ansible.builtin.dirname }}"
     create_home: false
     comment: 'X.509 certificate deployment user'
     shell: '/sbin/nologin'
@@ -59,8 +59,8 @@
   loop:
     - path: '/usr/local/sbin/'
       group: "{{ omit }}"
-    - path: "{{ managed_certificates_deployment_upload_directory | dirname }}"
-    - path: "{{ managed_certificates_deployment_upload_directory | dirname ~ '/.ssh' }}"
+    - path: "{{ managed_certificates_deployment_upload_directory | ansible.builtin.dirname }}"
+    - path: "{{ managed_certificates_deployment_upload_directory | ansible.builtin.dirname ~ '/.ssh' }}"
     - path: "{{ managed_certificates_deployment_upload_directory }}"
       owner: "{{ managed_certificates_deployment_user }}"
       group: "{{ managed_certificates_deployment_user }}"
@@ -101,13 +101,13 @@
     - name: 'Reload service files'
       ansible.builtin.systemd:
         daemon_reload: true
-      when: "_systemd_trigger is changed"
+      when: "_systemd_trigger is ansible.builtin.changed"
 
     - name: 'Enable and start certificate deployment trigger (systemd)'
       ansible.builtin.service:
         name: install_certificates.path
         enabled: true
-        state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'started') }}"
+        state: "{{ ansible_facts['is_chroot'] | ansible.builtin.ternary(omit, 'started') }}"
 
 - name: 'Set up deployment trigger (incron)'
   when: "ansible_facts['service_mgr'] != 'systemd'"
@@ -133,7 +133,7 @@
       ansible.builtin.service:
         name: "{{ managed_certificates_incron_service_name }}"
         enabled: true
-        state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'started') }}"
+        state: "{{ ansible_facts['is_chroot'] | ansible.builtin.ternary(omit, 'started') }}"
 
 - name: 'Configure sshd'
   ansible.builtin.template:
@@ -147,12 +147,12 @@
 - name: 'Add public SSH key(s) for deployment user'
   # Note: Module authorized_key unconditionally enforces permissions and ownership on the file that are not desired here.
   ansible.builtin.lineinfile:
-    path: "{{ managed_certificates_deployment_upload_directory | dirname ~ '/.ssh/authorized_keys' }}"
-    line: "restrict {{ item if item is search('^ssh-') else lookup('file', item) }}"
+    path: "{{ managed_certificates_deployment_upload_directory | ansible.builtin.dirname ~ '/.ssh/authorized_keys' }}"
+    line: "restrict {{ item if item is ansible.builtin.search('^ssh-') else lookup('ansible.builtin.file', item) }}"
     owner: root
     group: root
     mode: '0644'
     create: true
     state: present
-  loop: "{{ [managed_certificates_deployment_user_pubkey | default([])] | flatten }}"
+  loop: "{{ [managed_certificates_deployment_user_pubkey | default([])] | ansible.builtin.flatten }}"
   when: "managed_certificates_deployment_user_pubkey is defined"

@@ -1,5 +1,5 @@
 #!/bin/sh
-{{ ansible_managed | comment }}
+{{ ansible_managed | ansible.builtin.comment }}
 # This script moves X.509 certificates, certificate chains and private keys
 # from a source directory to their destination directory and sets correct
 # permissions. It handles both server and client certificates and is capable of
@@ -22,9 +22,9 @@
 # supplied, the existing files are kept. The new certificate must match the
 # existing files in this case.
 
-source_dir={{ managed_certificates_deployment_upload_directory | quote }}
-server_services='{{ [managed_certificates_server_certificate_consumers | default([])] | flatten | join(' ') }}'
-client_services='{{ [managed_certificates_client_certificate_consumers | default([])] | flatten | join(' ') }}'
+source_dir={{ managed_certificates_deployment_upload_directory | ansible.builtin.quote }}
+server_services='{{ [managed_certificates_server_certificate_consumers | default([])] | ansible.builtin.flatten | join(' ') }}'
+client_services='{{ [managed_certificates_client_certificate_consumers | default([])] | ansible.builtin.flatten | join(' ') }}'
 wipe_source_dir=true
 
 server_cert_files=
@@ -77,12 +77,12 @@ install_certificate() {
 
     case "${cert_type}" in
         server)
-            target_dir={{ managed_certificates_server_certificate_directory | quote }}
-            group={{ managed_certificates_server_group | quote }}
+            target_dir={{ managed_certificates_server_certificate_directory | ansible.builtin.quote }}
+            group={{ managed_certificates_server_group | ansible.builtin.quote }}
             ;;
         client)
-            target_dir={{ managed_certificates_client_certificate_directory | quote }}
-            group={{ managed_certificates_client_group | quote }}
+            target_dir={{ managed_certificates_client_certificate_directory | ansible.builtin.quote }}
+            group={{ managed_certificates_client_group | ansible.builtin.quote }}
             ;;
         *)
             log err "Unsupported certificate type ${cert_type}. Skipping ${cert_file#${tmp_dir%/}/}."
