@@ -65,7 +65,7 @@ Role Variables
   Default is `tls-server`.
 * `managed_certificates_server_certificate_directory`  
   A directory where the server certificates and private keys are stored.
-  Their file names are based on the certificate's "common name" attribute.
+  Their file names are based on the certificate's "common name" attribute, if present, and the first "subject alternative name" otherwise.
   Default is `/etc/ssl/local_certs/`.
 * `managed_certificates_server_certificate_consumers`  
   A list of services that need to be restarted when a new server certificate is deployed.
@@ -76,7 +76,7 @@ Role Variables
   Default is `tls-client`.
 * `managed_certificates_client_certificate_directory`  
   A directory where the client certificates and private keys are stored.
-  Their file names are based on the certificate's "common name" attribute.
+  Their file names are based on the certificate's "common name" attribute, if present, and the first "subject alternative name" otherwise.
   Default is `/etc/ssl/client_certs/`.
 * `managed_certificates_client_certificate_consumers`  
   A list of services that need to be restarted when a new client certificate is deployed.
