@@ -148,7 +148,7 @@
   # Note: Module authorized_key unconditionally enforces permissions and ownership on the file that are not desired here.
   ansible.builtin.lineinfile:
     path: "{{ managed_certificates_deployment_upload_directory | ansible.builtin.dirname ~ '/.ssh/authorized_keys' }}"
-    line: "restrict {{ item if item is ansible.builtin.search('^ssh-') else lookup('ansible.builtin.file', item) }}"
+    line: "restrict {{ item if item is ansible.builtin.match('sk-|ssh-') else lookup('ansible.builtin.file', item) }}"
     owner: root
     group: root
     mode: '0644'
