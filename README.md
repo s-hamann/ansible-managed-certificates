@@ -29,7 +29,7 @@ Refer to https://github.com/s-hamann/firecracker-tools for an implementation of 
 Requirements
 ------------
 
-This role requires Ansible 2.8 but has no further requirements on the controller.
+This role requires Ansible 2.10 but has no further requirements on the controller.
 
 Role Variables
 --------------
