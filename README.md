@@ -1,7 +1,7 @@
 Managed Certificates
 ====================
 
-This role prepares the target system for external management of X.509 certificates.
+This role prepares the target system for external management of X.509 and optionally SSH certificates.
 Certificates, keys and certificate chains can be deployed to the target system by simply uploading them via SFTP as an unprivileged user.
 The system itself handles basic validation of the uploaded files, moving them to the correct location and restarting services, so they load the new files.
 Some configuration is required for this to work correctly (see [Role Variables](#role-variables) below).
@@ -25,6 +25,9 @@ Further notes:
 * All other uploaded files are deleted in the process.
 
 Refer to https://github.com/s-hamann/firecracker-tools for an implementation of an external certificate manager that works with this role.
+
+In addition to X.509 certificates, this role can also handle externally managed OpenSSH host certificates.
+They must be uploaded with the file extension `.pub` will be installed to OpenSSH's default path for host certificates.
 
 Requirements
 ------------
@@ -85,6 +88,9 @@ Role Variables
   If the target system uses systemd, this option takes a list of paths, that should not be accessible at all during the certificate installation process.
   Regardless of this option, home directories are made inaccessible.
   Optional.
+* `managed_certificates_ssh`  
+  Whether to support handling OpenSSH host certificates in a similar manner to X.509 certificates.
+  Defaults to `false`.
 
 Dependencies
 ------------

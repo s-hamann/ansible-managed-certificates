@@ -21,6 +21,11 @@
     managed_certificates_packages: "{{ managed_certificates_packages + ['incron'] }}"
   when: "ansible_facts['service_mgr'] != 'systemd'"
 
+- name: 'Adjust package requirements'
+  ansible.builtin.set_fact:
+    managed_certificates_packages: "{{ managed_certificates_packages + managed_certificates_packages_ssh }}"
+  when: "managed_certificates_ssh | ansible.builtin.bool"
+
 - name: 'Install required packages'
   ansible.builtin.package:
     name: "{{ managed_certificates_packages }}"

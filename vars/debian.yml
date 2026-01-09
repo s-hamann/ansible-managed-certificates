@@ -1,2 +1,4 @@
 ---
 managed_certificates_incron_service_name: incron
+managed_certificates_packages_ssh:
+  - openssh-client

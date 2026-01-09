@@ -1,3 +1,5 @@
 ---
 managed_certificates_packages:
   - openssl
+managed_certificates_packages_ssh:
+  - openssh-keygen

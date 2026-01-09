@@ -21,6 +21,11 @@
 # certificate. If the private key and issuer certificate chain are not
 # supplied, the existing files are kept. The new certificate must match the
 # existing files in this case.
+{% if managed_certificates_ssh | ansible.builtin.bool %}
+# In addition, this script handles OpenSSH host certificates.
+# They must have the file extension .pub and will get installed to OpenSSH's
+# default path for host key certificates.
+{% endif %}
 
 source_dir={{ managed_certificates_deployment_upload_directory | ansible.builtin.quote }}
 server_services='{{ [managed_certificates_server_certificate_consumers | default([])] | ansible.builtin.flatten | join(' ') }}'
@@ -32,6 +37,7 @@ client_cert_files=
 
 new_server_certificates=false
 new_client_certificates=false
+new_ssh_certificates=false
 
 log() {
     prio="$1"
@@ -174,6 +180,44 @@ install_certificate() {
     log notice "${msg}"
     )
 }
+{% if managed_certificates_ssh | ansible.builtin.bool %}
+
+install_ssh_certificate() {
+    ( # The whole function runs in a subshell to keep the environment clean.
+    cert_file="$1"
+
+    log debug "Installing SSH certificate ${cert_file#${tmp_dir%/}/}."
+
+    keytype="$(cut -d' ' -f1 "${cert_file}" | sed -Ee 's/ssh-(\S+)-cert-v[0-9]+@openssh.com/\1/')"
+    principal="$(ssh-keygen -L -f "${cert_file}" | sed -ne '/Principals:/,/Critical Options:/{//!p;}' | head -n1 | sed -e 's/^\s*//')"
+
+    target_dir=/etc/ssh/
+    target_file="${target_dir}/ssh_host_${keytype}_key-cert.pub"
+
+    # Check if the certificate has expired.
+    expiry="$(ssh-keygen -L -f "${cert_file}" | sed -Ene 's/\s+Valid: from \S+ to (\S+)/\1/p')"
+    if [ "$(date +%s)" -gt "$(date +%s --date "${expiry}")" ]; then
+        log err "Certificate has expired. Skipping ${cert_file#${tmp_dir%/}/}."
+        exit 1
+    fi
+
+    # Check if the certificate matches the host key.
+    key_fp="$(ssh-keygen -l -f "${target_file/-cert/}" | cut -d' ' -f2)"
+    cert_fp="$(ssh-keygen -L -f "${cert_file}" | sed -Ene 's/^\s*Public key: \S+ (\S+)/\1/p')"
+    if [ "${key_fp}" != "${cert_fp}" ]; then
+        log err "Certificate does not match existing SSH host key. Skipping ${cert_file#${tmp_dir%/}/}."
+        exit 1
+    fi
+
+    # Copy the file to the target directory.
+    log debug "Installing SSH certificate ${cert_file#${tmp_dir%/}/} to ${target_file}."
+    cp -a "${cert_file}" "${target_file}"
+    chown root: "${target_file}"
+    chmod 0644 "${target_file}"
+    log notice "Installed new SSH certificate for ${principal} as ${target_file}."
+    )
+}
+{% endif %}
 
 # Lock to prevent multiple parallel executions.
 lock_fd="$(($(basename -- "$(find /proc/self/fd -type l | sort -n | tail -n1)") + 1))"
@@ -228,6 +272,27 @@ for file in "${tmp_dir}"/*.pem; do
         client_cert_files="${file} "
     fi
 done
+{% if managed_certificates_ssh | ansible.builtin.bool %}
+
+# Handle SSH certificates.
+for file in "${tmp_dir}"/*.pub; do
+    # If there are no *.pub files, we'll get the unexpanded pattern. Skip that.
+    if [ ! -e "${file}" ]; then
+        continue
+    fi
+    log debug "Checking ${file#${tmp_dir%/}/}."
+    case "$(head -n1 "${file}" | cut -d' ' -f1)" in
+        *-cert-v01@openssh.com)
+            if ssh-keygen -L -f "${file}" | grep 'Type: .* host certificate'; then
+                log debug "${file#${tmp_dir%/}/} is an SSH host certificate."
+                install_ssh_certificate "${file}" && new_ssh_certificates=true
+            else
+                log debug "${file#${tmp_dir%/}/} is not an SSH host certificate."
+            fi
+            ;;
+    esac
+done
+{% endif %}
 
 # Handle server certificates.
 for file in ${server_cert_files}; do
@@ -284,3 +349,23 @@ if "${new_client_certificates}"; then
 else
     log notice "No new client certificates were installed."
 fi
+{% if managed_certificates_ssh | ansible.builtin.bool %}
+
+if "${new_ssh_certificates}"; then
+    # Restart SSHd service so it loads the new ssh certificates.
+    log debug "Reloading SSH to load new certificate."
+{% if ansible_facts['service_mgr'] == 'systemd' %}
+    systemctl reload sshd
+{% elif ansible_facts['service_mgr'] == 'openrc' %}
+    if rc-service --dry-run sshd reload; then
+        rc-service sshd reload
+    else
+        rc-service sshd restart
+    fi
+{% else %}
+    /etc/init.d/sshd reload
+{% endif %}
+else
+    log notice "No new ssh certificates were installed."
+fi
+{% endif %}

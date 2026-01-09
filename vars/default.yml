@@ -3,4 +3,6 @@ managed_certificates_packages:
   - openssl
   - grep
   - sed
+managed_certificates_packages_ssh:
+  - openssh
 managed_certificates_incron_service_name: incrond

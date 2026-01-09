@@ -11,3 +11,4 @@ managed_certificates_client_group: tls-client
 managed_certificates_client_certificate_directory: '/etc/ssl/client_certs/'
 managed_certificates_client_certificate_consumers: []
 managed_certificates_inaccessible_paths: []
+managed_certificates_ssh: false
