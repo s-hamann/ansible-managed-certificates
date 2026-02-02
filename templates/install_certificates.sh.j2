@@ -102,7 +102,7 @@ install_certificate() {
 
     if [ -z "${cn}" ] || [ "${cn#*=}" != "${cn}" ]; then
         # No CN. The certificate may not have one. Fall back to the first DNS name from the subject alternative name extension.
-        cn="$(LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -ext subjectAltName | sed -Ene 's/.*DNS:([a-z0-9.-]{1,255})(,.*)?/\1/Ip')"
+        cn="$(LC_ALL=POSIX openssl x509 -in "${cert_file}" -noout -ext subjectAltName | sed -Ene 's/\s*DNS:([a-z0-9.-]{1,255})(,.*)?/\1/Ip')"
         if [ -z "${cn}" ]; then
             log err "Could not parse CN field or subject alternative name. Skipping ${cert_file#${tmp_dir%/}/}."
             exit 1
